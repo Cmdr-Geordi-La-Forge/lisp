@@ -11,6 +11,10 @@
 #include <csetjmp>
 #include <functional>
 
+#include <sys/wait.h>
+#include <sys/mman.h>
+#include <unistd.h>
+
 #ifdef HAVE_SIGNAL_H
 #include <signal.h>             /* to catch CTRL-C and continue the REPL */
 #endif
@@ -830,6 +834,30 @@ L f_throw(L t, L *_) {
   throw static_cast<int>(num(car(t)));
 }
 
+L f_fork(L t, L *e) {
+  L *arr = (L*)mmap(NULL, 16*sizeof(double), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
+  int n = 0;
+  pid_t pid;
+  while (T(t) != NIL) {
+    pid = fork();
+    if (pid == 0) {
+      arr[n] = eval(car(t), *e);
+      exit(0);
+    }
+    n++;
+    t = cdr(t);
+  }
+  if (pid != 0)
+    while (wait(NULL) > 0);
+  L result = nil;
+  if (n > 16)
+    return ERR(5, "%d exceeds the maximum number of 16 arguments ", n);
+  for (int i = --n; i >= 0; i--)
+    result = cons(arr[i], result);
+  munmap((void*)arr, 16*sizeof(double));
+  return result;
+}
+
 struct QUIT { };
 L f_quit(L t, L *_) {
   throw QUIT();
@@ -848,7 +876,7 @@ inline static const struct {
   const char *s;
   std::function<L(This&,L,L*)> f;
   uint8_t m;
-} prim[43] = {
+} prim[44] = {
   {"type",     &This::f_type,    NORMAL},           /* (type x) => <type> value between -1 and 7 */
   {"eval",     &This::f_ident,   NORMAL|TAILCALL},  /* (eval <quoted-expr>) => <value-of-expr> */
   {"quote",    &This::f_ident,   SPECIAL},          /* (quote <expr>) => <expr> -- protect <expr> from evaluation */
@@ -890,6 +918,7 @@ inline static const struct {
   {"trace",    &This::f_trace,   SPECIAL},          /* (trace flag [<expr>]) -- flag 0=off, 1=on, 2=keypress */
   {"catch",    &This::f_catch,   SPECIAL},          /* (catch <expr>) => <value-of-expr> if no except. else (ERR . n) */
   {"throw",    &This::f_throw,   NORMAL},           /* (throw n) -- raise exception error code n (integer != 0) */
+  {"fork",     &This::f_fork,    NORMAL},           /* (fork <expr1> <expr2> ... <exprn>) -- creates n (< 17) forks for multiprocessing */
   {"quit",     &This::f_quit,    NORMAL},           /* (quit) -- bye! */
   {0}
 };
