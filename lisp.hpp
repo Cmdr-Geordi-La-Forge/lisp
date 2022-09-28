@@ -974,6 +974,8 @@ L step(L x, L e) {
         continue;                               /* ... then continue evaluating x */
       break;                                    /* else break to return value x */
     }
+    if ((T(*f) & ~(CLOS^MACR)) != CLOS)         /* if f is not a closure or macro, then we cannot apply it */
+      err(4);
     if (T(*f) == CLOS) {                        /* if f is a closure, then */
       *d = cdr(*f);                             /* construct an extended local environment d from f's static scope */
       if (T(*d) == NIL)                         /* if f's static scope is nil, then use global env as static scope */
@@ -1004,7 +1006,7 @@ L step(L x, L e) {
       x = *y = cdr(car(*f));                    /* tail recursion optimization: evaluate the body x of closure f next */
       e = *z = *d;                              /* the new environment e is d to evaluate x, put in *z to protect */
     }
-    else if (T(x) == MACR) {                     /* else if f is a macro, then */
+    else {                                      /* else if f is a macro, then */
       *d = env;                                 /* construct an extended local environment d from global env */
       v = car(*f);                              /* get the parameters v of macro f */
       while (T(v) == CONS && T(x) == CONS) {    /* bind parameters v to arguments x to extend the local scope d */
@@ -1018,12 +1020,6 @@ L step(L x, L e) {
         *d = pair(v, x, *d);
       x = *y = eval(cdr(*f), *d);               /* evaluated body of the macro to evaluate next, put in *z to protect */
     }
-    else if (T(x) != STRG) {                    /* Allow for different lambda definition */
-      x = closure(*f, car(x), e);               /* (lambda args <expr>) == ('args <expr>) */
-      break;
-    }
-    else                                        /* if f is not a closure or macro, then we cannot apply it */
-      err(4);
   }
   unwind(k);                                    /* unwind the stack to allow GC to collect unused temporaries */
   return x;                                     /* return x evaluated */
